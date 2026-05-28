@@ -182,6 +182,23 @@
     padding-left: 11px;
   }
 
+  tbody tr {
+    cursor: pointer;
+  }
+
+  tbody tr.selected-row {
+    background: rgba(240, 255, 68, 0.08) !important;
+    border-left: 3px solid var(--accent) !important;
+  }
+
+  tbody tr.selected-row td:first-child {
+    padding-left: 11px;
+  }
+
+  .highlight-val {
+    color: var(--accent2);
+  }
+
   tbody td {
     padding: 13px 14px;
     color: var(--text);
@@ -210,7 +227,7 @@
   .summary-bar {
     margin-top: 28px;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
   }
 
@@ -247,6 +264,18 @@
 
   .stat-card.highlight .stat-value {
     color: var(--accent2);
+  }
+
+  .stat-card.shipping-free {
+    border-color: #44ff88;
+  }
+
+  .stat-card.shipping-free .stat-value {
+    color: #44ff88;
+  }
+
+  .stat-card.shipping-paid .stat-value {
+    color: #ffaa44;
   }
 
   .empty-state {
@@ -364,6 +393,7 @@
     <nav class="page-nav">
     <a href="index.html" class="active">DTF</a>
     <a href="uvdtf-calculator.html" class="inactive">UV DTF</a>
+    <a href="apparel-calculator.html" class="inactive">Apparel</a>
   </nav>
 
   <div class="inputs">
@@ -407,6 +437,36 @@
 
   const SHEET_WIDTH = 22;
 
+  function updateSummary(r, isBest) {
+    const shipping = r.totalCost >= 100 ? 0 : 7.50;
+    const trueTotal = r.totalCost + shipping;
+    const shippingFree = r.totalCost >= 100;
+
+    document.getElementById('card-size').textContent = r.size;
+    document.getElementById('card-size').className = 'stat-value' + (isBest ? ' highlight-val' : '');
+    document.getElementById('card-cost').textContent = '$' + r.totalCost.toFixed(2);
+    document.getElementById('card-shipping').textContent = shippingFree ? 'FREE' : '$7.50';
+    document.getElementById('card-shipping-wrap').className = 'stat-card ' + (shippingFree ? 'shipping-free' : 'shipping-paid');
+    document.getElementById('card-total').textContent = '$' + trueTotal.toFixed(2);
+
+    const banner = document.getElementById('shipping-banner');
+    if (shippingFree) {
+      banner.className = 'shipping-banner free';
+      banner.textContent = '✦ FREE SHIPPING — Order total exceeds $100';
+    } else {
+      banner.className = 'shipping-banner paid';
+      banner.textContent = '⚑ Add $' + (100 - r.totalCost).toFixed(2) + ' more to qualify for free shipping';
+    }
+  }
+
+  function selectRow(el, idx) {
+    document.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('selected-row'));
+    el.classList.add('selected-row');
+    const r = window._calcResults[idx];
+    const isBest = idx === window._calcBestIdx;
+    updateSummary(r, isBest);
+  }
+
   function calculate() {
     const w = parseFloat(document.getElementById('width').value);
     const h = parseFloat(document.getElementById('height').value);
@@ -432,7 +492,8 @@
       const totalCost = sheetsNeeded * sheet.price;
       const totalPrints = sheetsNeeded * fitsPerSheet;
       const leftover = totalPrints - qty;
-      const costPerPrint = totalCost / qty;
+      const shipping = totalCost >= 100 ? 0 : 7.50;
+      const costPerPrint = (totalCost + shipping) / qty;
       const pricePerPrint = costPerPrint * 1.15;
 
       return {
@@ -455,10 +516,36 @@
     const bestIdx = results.reduce((bi, r, i) => r.costPerPrint < results[bi].costPerPrint ? i : bi, 0);
     const best = results[bestIdx];
 
+    // store results globally so row clicks can access them
+    window._calcResults = results;
+    window._calcBestIdx = bestIdx;
+
+    function updateSummary(r, isBest) {
+      const shipping = r.totalCost >= 100 ? 0 : 7.50;
+      const trueTotal = r.totalCost + shipping;
+      const shippingFree = r.totalCost >= 100;
+
+      document.getElementById('card-size').textContent = r.size;
+      document.getElementById('card-size').className = 'stat-value' + (isBest ? ' highlight-val' : '');
+      document.getElementById('card-cost').textContent = '$' + r.totalCost.toFixed(2);
+      document.getElementById('card-shipping').textContent = shippingFree ? 'FREE' : '$7.50';
+      document.getElementById('card-shipping-wrap').className = 'stat-card ' + (shippingFree ? 'shipping-free' : 'shipping-paid');
+      document.getElementById('card-total').textContent = '$' + trueTotal.toFixed(2);
+
+      const banner = document.getElementById('shipping-banner');
+      if (shippingFree) {
+        banner.className = 'shipping-banner free';
+        banner.textContent = '✦ FREE SHIPPING — Order total exceeds $100';
+      } else {
+        banner.className = 'shipping-banner paid';
+        banner.textContent = '⚑ Add $' + (100 - r.totalCost).toFixed(2) + ' more to qualify for free shipping';
+      }
+    }
+
     let rows = results.map((r, i) => {
       const isBest = i === bestIdx;
       return `
-        <tr class="${isBest ? 'best-row' : ''}">
+        <tr class="${isBest ? 'best-row selected-row' : ''}" data-idx="${i}" onclick="selectRow(this, ${i})">
           <td class="size-cell">${r.size}</td>
           <td class="price-cell">$${r.price.toFixed(2)}</td>
           <td>${r.fitsPerSheet}</td>
@@ -472,33 +559,33 @@
       `;
     }).join('');
 
-    const shippingBanner = best.totalCost >= 100
-      ? '<div class="shipping-banner free">✦ FREE SHIPPING — Order total exceeds $100</div>'
-      : '<div class="shipping-banner paid">⚑ Add $' + (100 - best.totalCost).toFixed(2) + ' more to qualify for free shipping</div>';
-
     document.getElementById('output').innerHTML = `
       <div class="summary-bar">
-        <div class="stat-card highlight">
-          <div class="stat-label">Best Value Size</div>
-          <div class="stat-value">${best.size}</div>
+        <div class="stat-card highlight" id="card-size-wrap">
+          <div class="stat-label">Selected Size</div>
+          <div class="stat-value highlight-val" id="card-size">${best.size}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Total Cost</div>
-          <div class="stat-value">$${best.totalCost.toFixed(2)}</div>
+          <div class="stat-label">Sheet Cost</div>
+          <div class="stat-value" id="card-cost">$${best.totalCost.toFixed(2)}</div>
+        </div>
+        <div class="stat-card ${best.totalCost >= 100 ? 'shipping-free' : 'shipping-paid'}" id="card-shipping-wrap">
+          <div class="stat-label">Shipping</div>
+          <div class="stat-value" id="card-shipping">${best.totalCost >= 100 ? 'FREE' : '$7.50'}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Cost Per Print</div>
-          <div class="stat-value">$${best.costPerPrint.toFixed(3)}</div>
+          <div class="stat-label">True Total</div>
+          <div class="stat-value" id="card-total">$${(best.totalCost + (best.totalCost >= 100 ? 0 : 7.50)).toFixed(2)}</div>
         </div>
       </div>
 
-      ${shippingBanner}
+      <div class="shipping-banner ${best.totalCost >= 100 ? 'free' : 'paid'}" id="shipping-banner">${best.totalCost >= 100 ? '✦ FREE SHIPPING — Order total exceeds $100' : '⚑ Add $' + (100 - best.totalCost).toFixed(2) + ' more to qualify for free shipping'}</div>
 
       <hr class="divider">
 
       <div class="results-header">
         <h2>All Sheet Options</h2>
-        <span class="best-badge">✦ = best value</span>
+        <span class="best-badge">✦ = best value — click any row to select</span>
       </div>
 
       <table>
